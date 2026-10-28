@@ -1,0 +1,10 @@
+[build]
+  publish = "public"
+  command = "npm run build"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/results.json"
+  to = "/.netlify/functions/results"
+  status = 200
+  force = true
