@@ -17,6 +17,7 @@ function parseCSV(text) {
     else cell+=c;
   }
   if(cell||row.length){row.push(cell);rows.push(row);}
+  if (!rows.length) throw new Error('CSV response is empty (no rows)');
   const header=rows.shift().map(x=>x.trim());
   return {header,rows:rows.map(r=>Object.fromEntries(header.map((h,i)=>[h,r[i]??''])))};
 }
@@ -62,6 +63,8 @@ async function load() {
     if(cache?.sourceHash===hash){cache={...cache,lastChecked:new Date(now).toISOString(),sourceChanged:false,stale:false};return cache;}
     let decoded=new TextDecoder('utf-8',{fatal:false}).decode(bytes);
     if(!decoded.includes('שם ישוב'))decoded=new TextDecoder('windows-1255').decode(bytes);
+    if (!decoded.trim()) throw new Error(`Source returned empty body (${bytes.length} bytes)`);
+    if (!decoded.includes('שם ישוב')) throw new Error(`Source did not return expected CSV header; bytes=${bytes.length}; preview=${decoded.slice(0,120).replace(/[\r\n]/g,' ')}`);
     const {header,rows}=parseCSV(decoded);
     if(!header.includes('שם ישוב')||!header.includes('כשרים')||rows.length===0)throw new Error('Unexpected CSV format');
     const symbols=header.filter(k=>k&&!META.includes(k));
@@ -80,5 +83,5 @@ async function load() {
 }
 export default async () => {
   try {const result=await load();return new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'public, max-age=0, s-maxage=60, stale-while-revalidate=30','Access-Control-Allow-Origin':'*'}});}
-  catch(err){return new Response(JSON.stringify({error:String(err),stale:true}),{status:503,headers:{'Content-Type':'application/json; charset=utf-8'}});}
+  catch(err){return new Response(JSON.stringify({error:String(err),stale:true,source:SOURCE,diagnostic:'Check source response in Netlify runtime; browser success does not guarantee server access.'}),{status:503,headers:{'Content-Type':'application/json; charset=utf-8'}});}
 };
