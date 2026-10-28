@@ -1,20 +1,16 @@
-# Elections 26 live dashboard
+# תיקון 503 – גיבוי CSV
 
-Static Hebrew dashboard hosted on Netlify with a server-side JSON API.
+הפונקציה מנסה קודם להוריד את קובץ ועדת הבחירות. אם השרת מחזיר 0 בתים, היא קוראת לקובץ הגיבוי בכתובת `/data/expc.csv`.
 
-## Deploy
-1. Create a GitHub repository, upload all project files (not the ZIP itself).
-2. In Netlify, choose Add new project → Import an existing project → GitHub.
-3. Select the repository. Build command `npm run build`, publish directory `public`.
-4. After deployment open `/results.json` and then the homepage.
+## פריסה ראשונית
+1. חלץ ZIP והעלה את כל הקבצים ל-GitHub, תוך שמירה על מבנה התיקיות.
+2. במחשב שלך, הורד את הקובץ: `Invoke-WebRequest https://media26.bechirot.gov.il/files/expc.csv -OutFile "$env:USERPROFILE\Desktop\expc.csv"`
+3. ב-GitHub פתח `public/data`, לחץ Add file > Upload files והעלה `expc.csv`.
+4. בצע Commit והמתן לפריסה ב-Netlify.
+5. ודא ש-`https://guy-election-2026.netlify.app/data/expc.csv` מוריד קובץ וש-`/results.json` מחזיר נתונים.
 
-## Architecture
-- `/results.json` redirects to a Netlify Function that downloads the official `expc.csv` on demand.
-- The function uses a 60-second in-memory cache per warm instance and Netlify CDN caching for 60 seconds. Multiple instances may fetch independently. The browser polls every 60 seconds. This is NOT a guaranteed clock-driven job or durable on-disk results.json file.
-- SHA-256 detects changed CSV bytes; the function validates that party totals match the valid vote total.
-- If source fetch fails, warm instances return stale data; cold instances return HTTP 503.
-- The displayed 120-seat allocation is **provisional**. Surplus agreements are empty by default until individually verified with an official source. Populate `VERIFIED_SURPLUS_AGREEMENTS` in `netlify/functions/results.mjs` with ballot symbols when verified.
-- The source file is by locality and may omit special envelopes or other national ballot categories; do not present seat allocation as official final results.
+## עדכונים
+קובץ הגיבוי אינו מתעדכן מעצמו! יש להעלות קובץ חדש ל-GitHub. כאשר השרת הראשי נגיש, ה-API ינסה לקרוא אותו מחדש אחת לדקה (מטמון תלוי מופע). אם הוא לא נגיש, האתר יציג את הגיבוי עם `stale: true`.
 
-## Local testing
-Requires Node.js 20+ and Netlify CLI (`npm install -g netlify-cli`). Run `netlify dev`, then open the local URL.
+## אזהרה
+חישוב המנדטים הוא זמני בלבד: הסכמי עודפים מאומתים לא הוגדרו והקובץ לפי יישובים עשוי להיות חלקי. אין להציג את המספרים כחלוקה רשמית.

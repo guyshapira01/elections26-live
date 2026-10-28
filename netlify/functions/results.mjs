@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 const SOURCE = 'https://media26.bechirot.gov.il/files/expc.csv';
+const BACKUP = 'https://guy-election-2026.netlify.app/data/expc.csv';
 const META = ['סמל ועדה','שם ישוב','סמל ישוב','בזב','מצביעים','פסולים','כשרים'];
 // Add ONLY agreements verified from the Central Elections Committee, as ballot-letter pairs.
 // Example format: [['מחל','ט']] (EXAMPLE ONLY; not activated).
@@ -56,11 +57,22 @@ async function load() {
   const now=Date.now();if(cache&&now-lastCheck<60000)return cache;
   lastCheck=now;
   try{
-    const res=await fetch(SOURCE,{headers:{'User-Agent':'Elections26Dashboard/1.0','Accept':'text/csv,*/*'},signal:AbortSignal.timeout(20000)});
-    if(!res.ok)throw new Error(`Source HTTP ${res.status}`);
-    const bytes=Buffer.from(await res.arrayBuffer());
+    let bytes, activeSource = SOURCE, fallbackUsed = false;
+    try {
+      const res = await fetch(SOURCE, {headers:{'User-Agent':'Mozilla/5.0','Accept':'text/csv,*/*'},signal:AbortSignal.timeout(12000)});
+      if (!res.ok) throw new Error(`Primary HTTP ${res.status}`);
+      bytes = Buffer.from(await res.arrayBuffer());
+      if (!bytes.length) throw new Error('Primary returned 0 bytes');
+    } catch (primaryError) {
+      const backup = await fetch(BACKUP, {signal:AbortSignal.timeout(12000)});
+      if (!backup.ok) throw new Error(`Primary: ${primaryError.message}; backup HTTP ${backup.status}. Upload public/data/expc.csv to GitHub.`);
+      bytes = Buffer.from(await backup.arrayBuffer());
+      if (!bytes.length) throw new Error(`Primary: ${primaryError.message}; backup empty. Upload public/data/expc.csv.`);
+      activeSource = BACKUP;
+      fallbackUsed = true;
+    }
     const hash=createHash('sha256').update(bytes).digest('hex');
-    if(cache?.sourceHash===hash){cache={...cache,lastChecked:new Date(now).toISOString(),sourceChanged:false,stale:false};return cache;}
+    if(cache?.sourceHash===hash){cache={...cache,lastChecked:new Date(now).toISOString(),sourceChanged:false,stale:fallbackUsed,source:activeSource,backupUsed:fallbackUsed};return cache;}
     let decoded=new TextDecoder('utf-8',{fatal:false}).decode(bytes);
     if(!decoded.includes('שם ישוב'))decoded=new TextDecoder('windows-1255').decode(bytes);
     if (!decoded.trim()) throw new Error(`Source returned empty body (${bytes.length} bytes)`);
@@ -77,7 +89,7 @@ async function load() {
     const sumVotes=Object.values(votes).reduce((a,b)=>a+b,0);
     if(sumVotes!==totals.valid)throw new Error(`Votes mismatch: ${sumVotes} vs ${totals.valid}`);
     const allocation=allocate(votes,totals.valid,VERIFIED_SURPLUS_AGREEMENTS);
-    cache={source:SOURCE,sourceHash:hash,sourceBytes:bytes.length,sourceChanged:true,lastChecked:new Date(now).toISOString(),lastChanged:new Date(now).toISOString(),stale:false,totals,cityCount:cities.length,cities,parties:Object.entries(votes).map(([symbol,votes])=>({symbol,votes,percent:totals.valid?100*votes/totals.valid:0,seats:allocation.seats[symbol]||0,passesThreshold:votes>=allocation.threshold})).sort((a,b)=>b.votes-a.votes),allocation:{...allocation,method:'Bader-Ofer / D’Hondt',agreements:VERIFIED_SURPLUS_AGREEMENTS,agreementsVerified:VERIFIED_SURPLUS_AGREEMENTS.length>0,provisional:true,warning:'Seat projection only. Verify official surplus agreements and completeness of nationwide ballots.'}};
+    cache={source:activeSource,backupUsed:fallbackUsed,sourceHash:hash,sourceBytes:bytes.length,sourceChanged:true,lastChecked:new Date(now).toISOString(),lastChanged:new Date(now).toISOString(),stale:fallbackUsed,totals,cityCount:cities.length,cities,parties:Object.entries(votes).map(([symbol,votes])=>({symbol,votes,percent:totals.valid?100*votes/totals.valid:0,seats:allocation.seats[symbol]||0,passesThreshold:votes>=allocation.threshold})).sort((a,b)=>b.votes-a.votes),allocation:{...allocation,method:'Bader-Ofer / D’Hondt',agreements:VERIFIED_SURPLUS_AGREEMENTS,agreementsVerified:VERIFIED_SURPLUS_AGREEMENTS.length>0,provisional:true,warning:'Seat projection only. Verify official surplus agreements and completeness of nationwide ballots.'}};
     return cache;
   }catch(err){if(cache)return {...cache,stale:true,error:String(err),lastChecked:new Date(now).toISOString()};throw err;}
 }
